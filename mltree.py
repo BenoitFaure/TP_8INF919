@@ -16,7 +16,7 @@ sc = SparkContext.getOrCreate()
 sc.setLogLevel("ERROR")
 
 # --------- Start Spark Session ---------
-spark = SparkSession.builder.master("local[2]").appName("MySparkApp").getOrCreate()
+spark = SparkSession.builder.getOrCreate() # SparkSession.builder.master("local[2]").appName('ml_tree').getOrCreate()
 
 # --------- Read Data ---------
 # Read data into Spark DataFrame
@@ -63,7 +63,7 @@ df_assembled = assembler.transform(df_indexed).select("features", "indexedLabel"
 df_train = df_assembled.alias('df_train')
 
 # Clear save file
-path = 'out/ml_tree_local.csv'
+path = 'out/ml_tree.csv'
 with open(path, 'w') as f:
         f.write('m,dt\n')
 
