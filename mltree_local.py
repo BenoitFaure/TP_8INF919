@@ -63,7 +63,8 @@ df_assembled = assembler.transform(df_indexed).select("features", "indexedLabel"
 df_train = df_assembled.alias('df_train')
 
 # Clear save file
-with open('out/ml_tree_local.csv', 'a') as f:
+path = 'out/ml_tree_local.csv'
+with open(path, 'w') as f:
         f.write('m,dt\n')
 
 # Init variables
@@ -81,7 +82,7 @@ for i in range(0, max_m, step):
     dt = time.time() - dt
 
     # Append data to file
-    with open('out/ml_tree_local.csv', 'a') as f:
+    with open(path, 'a') as f:
         f.write(f'{i + 1},{dt}\n')
 
     # Progress Bar
