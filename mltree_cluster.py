@@ -2,6 +2,7 @@
 
 # Dependencies
 import time
+import sys
 
 from pyspark.sql import SparkSession
 from pyspark.ml import Pipeline
@@ -10,8 +11,12 @@ from pyspark.sql.functions import col
 from pyspark.sql.types import IntegerType
 from pyspark.ml.classification import DecisionTreeClassifier
 
+from pyspark import SparkContext
+sc = SparkContext.getOrCreate()
+sc.setLogLevel("ERROR")
+
 # --------- Start Spark Session ---------
-spark = SparkSession.builder.master("local[2]").appName("MySparkApp").getOrCreate()
+spark = SparkSession.builder.getOrCreate()
 
 # --------- Read Data ---------
 # Read data into Spark DataFrame
@@ -57,6 +62,10 @@ df_assembled = assembler.transform(df_indexed).select("features", "indexedLabel"
 # Init dataframe
 df_train = df_assembled.alias('df_train')
 
+# Clear save file
+with open('out/ml_tree_local.csv', 'a') as f:
+        f.write('m,dt\n')
+
 # Init variables
 performances = []
 max_m = 201
@@ -71,19 +80,17 @@ for i in range(0, max_m, step):
     model = tree.fit(df_train)
     dt = time.time() - dt
 
-    # Add performance to list
-    performances.append((i + 1, dt))
+    # Append data to file
+    with open('out/ml_tree_local.csv', 'a') as f:
+        f.write(f'{i + 1},{dt}\n')
+
+    # Progress Bar
+    prog = int(i/max_m*30)
+    msg = f"[{'*'*prog}{' ' * (30 - prog)}] {int(i/max_m*100)}%"
+    sys.stdout.write(msg)
+    sys.stdout.write("\b" * len(msg))
+    sys.stdout.flush()
 
     # Add data to train for next loop
     for _ in range(step):
         df_train = df_train.union(df_assembled)
-
-# --------- Save Results ---------
-# Save to csv
-with open('out/ml_tree_local.csv', 'w') as f:
-    # Write header
-    f.write('m,dt\n')
-
-    # Write data
-    for m, dt in performances:
-        f.write(f'{m},{dt}\n')
