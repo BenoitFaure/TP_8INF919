@@ -8,12 +8,12 @@ from pyspark.sql import SparkSession
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer, VectorAssembler
 from pyspark.sql.functions import col
-from pyspark.sql.types import IntegerType
 from pyspark.ml.classification import DecisionTreeClassifier
 
 from pyspark import SparkContext
 sc = SparkContext.getOrCreate()
 sc.setLogLevel("ERROR")
+job_id = sc.getConf().get("spark.app.id")
 
 # --------- Start Spark Session ---------
 spark = SparkSession.builder.getOrCreate() # SparkSession.builder.master("local[2]").appName('ml_tree').getOrCreate()
@@ -33,21 +33,20 @@ label_col = df.columns[-1]
 # 1] Get enmbeddings
 
 # String indexers for categorical columns
-str_cols = [col for col in feature_cols if df.select(col).dtypes[0][1] == 'string']
-feature_indexers = [StringIndexer(inputCol=col, outputCol=col+'_index') for col in str_cols]
+str_cols = [c for c in feature_cols if df.select(c).dtypes[0][1] == 'string']
+feature_indexers = [StringIndexer(inputCol=c, outputCol=c+'_index') for c in str_cols]
 
 #   Get new feature column names
-feature_cols_indexed = [indexer.getOutputCol() for indexer in feature_indexers] + [col for col in feature_cols if col not in str_cols]
+feature_cols_indexed = [indexer.getOutputCol() for indexer in feature_indexers] + [c for c in feature_cols if c not in str_cols]
 
 # String indexer for label
 labelIndexer = StringIndexer(inputCol=label_col, outputCol="indexedLabel")
 
 # Transform dataframe
-df_indexed = Pipeline(stages=feature_indexers+[labelIndexer]).fit(df).transform(df)
+df_indexed = Pipeline(stages=feature_indexers+[labelIndexer]).fit(df).transform(df).select(feature_cols_indexed + ["indexedLabel"])
 
-# Set all columns to integer type
-for column_name in feature_cols_indexed + ["indexedLabel"]:
-    df_indexed = df_indexed.withColumn(column_name, col(column_name).cast(IntegerType()))
+# # Set all columns to integer type
+df_indexed = df_indexed.select([col(c).cast("integer") for c in df_indexed.columns])
 
 # 2] Get feature vector
 
@@ -62,15 +61,18 @@ df_assembled = assembler.transform(df_indexed).select("features", "indexedLabel"
 # Init dataframe
 df_train = df_assembled.alias('df_train')
 
-# Clear save file
-path = 'out/ml_tree.csv'
-with open(path, 'w') as f:
-        f.write('m,dt\n')
+# Start print sequence
+sys.stdout.write('m,dt\n')
 
 # Init variables
 performances = []
-max_m = 401
-step = 40
+max_m = 151
+step = 10
+
+# Clear save file
+path = 'out/ml_tree_' + str(job_id) + '_' + str(max_m) + '.csv'
+with open(path, 'w') as f:
+    f.write('m,dt\n')
 
 for i in range(0, max_m, step):
     # Create the DecisionTree model
@@ -81,17 +83,15 @@ for i in range(0, max_m, step):
     model = tree.fit(df_train)
     dt = time.time() - dt
 
+    # Print info
+    sys.stdout.write(str(i + 1) + "," + str(dt) + "\n")
+
     # Append data to file
     with open(path, 'a') as f:
-        f.write(f'{i + 1},{dt}\n')
-
-    # Progress Bar
-    prog = int(i/max_m*30)
-    msg = f"[{'*'*prog}{' ' * (30 - prog)}] {int(i/max_m*100)}%"
-    sys.stdout.write(msg)
-    sys.stdout.write("\b" * len(msg))
-    sys.stdout.flush()
+        f.write(str(i + 1) + "," + str(dt) + "\n")
 
     # Add data to train for next loop
     for _ in range(step):
         df_train = df_train.union(df_assembled)
+
+spark.stop()
