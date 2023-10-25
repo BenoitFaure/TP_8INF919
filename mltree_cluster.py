@@ -1,4 +1,4 @@
-# MR Tree in local configuration
+# MR Tree in cluster configuration
 
 # Dependencies
 import time
@@ -11,87 +11,107 @@ from pyspark.sql.functions import col
 from pyspark.ml.classification import DecisionTreeClassifier
 
 from pyspark import SparkContext
-sc = SparkContext.getOrCreate()
-sc.setLogLevel("ERROR")
-job_id = sc.getConf().get("spark.app.id")
 
-# --------- Start Spark Session ---------
-spark = SparkSession.builder.getOrCreate() # SparkSession.builder.master("local[2]").appName('ml_tree').getOrCreate()
+def run(num_nodes, num_cpu):
 
-# --------- Read Data ---------
-# Read data into Spark DataFrame
-df = spark.read.csv('data_a/adult.data', header=False, inferSchema=True)
+    # --------- Start Spark Context ---------
+    sc = SparkContext.getOrCreate()
+    sc.setLogLevel("ERROR")
 
-# Fill NA
-df = df.fillna(0)
+    # --------- Start Spark Session ---------
+    spark = SparkSession.builder.getOrCreate()
 
-# Define the features and label columns
-feature_cols = df.columns[:-1]
-label_col = df.columns[-1]
+    # --------- Read Data ---------
+    # Read data into Spark DataFrame
+    df = spark.read.csv('data_a/adult.data', header=False, inferSchema=True)
 
-# --------- Data Preprocessing ---------
-# 1] Get enmbeddings
+    # Fill NA
+    df = df.fillna(0)
 
-# String indexers for categorical columns
-str_cols = [c for c in feature_cols if df.select(c).dtypes[0][1] == 'string']
-feature_indexers = [StringIndexer(inputCol=c, outputCol=c+'_index') for c in str_cols]
+    # Define the features and label columns
+    feature_cols = df.columns[:-1]
+    label_col = df.columns[-1]
 
-#   Get new feature column names
-feature_cols_indexed = [indexer.getOutputCol() for indexer in feature_indexers] + [c for c in feature_cols if c not in str_cols]
+    # --------- Data Preprocessing ---------
+    # 1] Get enmbeddings
 
-# String indexer for label
-labelIndexer = StringIndexer(inputCol=label_col, outputCol="indexedLabel")
+    # String indexers for categorical columns
+    str_cols = [c for c in feature_cols if df.select(c).dtypes[0][1] == 'string']
+    feature_indexers = [StringIndexer(inputCol=c, outputCol=c+'_index') for c in str_cols]
 
-# Transform dataframe
-df_indexed = Pipeline(stages=feature_indexers+[labelIndexer]).fit(df).transform(df).select(feature_cols_indexed + ["indexedLabel"])
+    #   Get new feature column names
+    feature_cols_indexed = [indexer.getOutputCol() for indexer in feature_indexers] + [c for c in feature_cols if c not in str_cols]
 
-# # Set all columns to integer type
-df_indexed = df_indexed.select([col(c).cast("integer") for c in df_indexed.columns])
+    # String indexer for label
+    labelIndexer = StringIndexer(inputCol=label_col, outputCol="indexedLabel")
 
-# 2] Get feature vector
+    # Transform dataframe
+    df_indexed = Pipeline(stages=feature_indexers+[labelIndexer]).fit(df).transform(df).select(feature_cols_indexed + ["indexedLabel"])
 
-# Vector assembler
-assembler = VectorAssembler(inputCols=feature_cols_indexed, outputCol="features")
+    # # Set all columns to integer type
+    df_indexed = df_indexed.select([col(c).cast("integer") for c in df_indexed.columns])
 
-# Transform dataframe
-df_assembled = assembler.transform(df_indexed).select("features", "indexedLabel")
+    # 2] Get feature vector
 
-# --------- Train Model ---------
+    # Vector assembler
+    assembler = VectorAssembler(inputCols=feature_cols_indexed, outputCol="features")
 
-# Init dataframe
-df_train = df_assembled.alias('df_train')
+    # Transform dataframe
+    df_assembled = assembler.transform(df_indexed).select("features", "indexedLabel")
 
-# Start print sequence
-sys.stdout.write('m,dt\n')
+    # Split into test/train
+    (df_train_e, df_test) = df_assembled.randomSplit([0.7, 0.3])
 
-# Init variables
-performances = []
-max_m = 151
-step = 10
+    # --------- Train Model ---------
 
-# Clear save file
-path = 'out/ml_tree_' + str(job_id) + '_' + str(max_m) + '.csv'
-with open(path, 'w') as f:
-    f.write('m,dt\n')
+    # Init dataframe
+    df_train = df_assembled.alias('df_train')
 
-for i in range(0, max_m, step):
-    # Create the DecisionTree model
-    tree = DecisionTreeClassifier(labelCol='indexedLabel', featuresCol='features')
+    # Start print sequence
+    sys.stdout.write('m,dt,accuracy\n')
 
-    # Fit the model to the data and calculate performance
-    dt = time.time()
-    model = tree.fit(df_train)
-    dt = time.time() - dt
+    # Init variables
+    max_m = 600
+    step = 30
 
-    # Print info
-    sys.stdout.write(str(i + 1) + "," + str(dt) + "\n")
+    # Clear save file
+    path = 'out/ml_tree_' + str(max_m) + '_' + str(num_nodes) + '_' + str(num_cpu) + '.csv'
+    with open(path, 'w') as f:
+        f.write('m,dt\n')
 
-    # Append data to file
-    with open(path, 'a') as f:
-        f.write(str(i + 1) + "," + str(dt) + "\n")
+    for i in range(0, max_m, step):
+        # Create the DecisionTree model
+        tree = DecisionTreeClassifier(labelCol='indexedLabel', featuresCol='features')
 
-    # Add data to train for next loop
-    for _ in range(step):
-        df_train = df_train.union(df_assembled)
+        # Fit the model to the data and calculate performance
+        dt = time.time()
+        model = tree.fit(df_train)
+        dt = time.time() - dt
 
-spark.stop()
+        # Test model - predictions
+        predictions = model.transform(df_test)
+        # Test model - accuracy
+        accuracy = predictions.filter(predictions.indexedLabel == predictions.prediction).count() / float(predictions.count())
+
+        # Print info
+        msg = str(i + 1) + "," + str(dt) + "," + str(accuracy) + "\n"
+        sys.stdout.write(msg)
+
+        # Append data to file
+        with open(path, 'a') as f:
+            f.write(msg)
+
+        # Add data to train for next loop
+        for _ in range(step):
+            df_train = df_train.union(df_train_e)
+
+    spark.stop()
+
+sys.stdout.write('Script Open')
+if __name__ == '__main__':
+    # Catch inputs
+    if len(sys.argv) > 2 and sys.argv[1].isdigit() and sys.argv[2].isdigit():
+        sys.stdout.write('Running with ' + sys.argv[1] + ' nodes and ' + sys.argv[2] + ' CPUs')
+        run(sys.argv[1], sys.argv[2])
+    else:
+        sys.stdout.write('Usage: python mltree.py num_nodes num_cpu')
