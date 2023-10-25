@@ -77,7 +77,7 @@ def run(num_nodes, num_cpu):
     # Clear save file
     path = 'out/ml_tree_' + str(max_m) + '_' + str(num_nodes) + '_' + str(num_cpu) + '.csv'
     with open(path, 'w') as f:
-        f.write('m,dt\n')
+        f.write('m,dt,a\n')
 
     for i in range(0, max_m, step):
         # Create the DecisionTree model
