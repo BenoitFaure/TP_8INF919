@@ -185,12 +185,14 @@ conv_net = [
     identity_block(128, kernel_size=3),
 
     convolutional_block(256, strides=1),
+    MaxPooling2D(pool_size=2, strides=2),
+    
     convolutional_block(512, strides=1),
     MaxPooling2D(pool_size=2, strides=2),
 
     identity_block(512, kernel_size=3),
 
-    MaxPooling2D(pool_size=8, strides=1)
+    MaxPooling2D(pool_size=4, strides=1)
 ]
 
 classification_net = [
