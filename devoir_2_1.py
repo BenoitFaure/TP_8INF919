@@ -33,7 +33,7 @@ kernel_reg = None # tf.keras.regularizers.l2(0.0001)
 
 # Training settings
 epochs = 1000 # 90
-batch_size = 256 # 64
+batch_size = 64 # 256
 
 # Define optimizer
 learning_rate = 0.005
@@ -195,10 +195,15 @@ conv_net = [
     MaxPooling2D(pool_size=4, strides=1)
 ]
 
+# classification_net = [
+#     Flatten(),
+#     Dense(512, kernel_initializer=initializer, activation=activation_function),
+#     Dropout(0.5),
+#     Dense(num_classes, kernel_initializer=classification_initializer, activation='softmax')
+# ]
+
 classification_net = [
     Flatten(),
-    Dense(512, kernel_initializer=initializer, activation=activation_function),
-    Dropout(0.5),
     Dense(num_classes, kernel_initializer=classification_initializer, activation='softmax')
 ]
 
