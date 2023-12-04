@@ -204,6 +204,7 @@ conv_net = [
 
 classification_net = [
     Flatten(),
+    Dropout(0.3), # 0.5
     Dense(num_classes, kernel_initializer=classification_initializer, activation='softmax')
 ]
 
